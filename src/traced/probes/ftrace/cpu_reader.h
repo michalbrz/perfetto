@@ -412,6 +412,13 @@ class CpuReader {
   // For FtraceController, which manages poll callbacks on per-cpu buffer fds.
   int RawBufferFd() const { return trace_fd_.get(); }
 
+  // Niche version of ReadCycle for FrozenFtraceDataSource, assumes a stopped
+  // tracefs instance. Don't add new callers.
+  size_t ReadFrozen(ParsingBuffers* parsing_bufs,
+                    size_t max_pages,
+                    const FtraceDataSourceConfig* parsing_config,
+                    TraceWriter* trace_writer);
+
  private:
   // Reads at most |max_pages| of ftrace data, parses it, and writes it
   // into |started_data_sources|. Returns number of pages read.

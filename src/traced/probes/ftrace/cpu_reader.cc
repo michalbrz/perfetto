@@ -33,6 +33,7 @@
 #include "src/traced/probes/ftrace/ftrace_config_muxer.h"
 #include "src/traced/probes/ftrace/ftrace_controller.h"  // FtraceClockSnapshot
 #include "src/traced/probes/ftrace/ftrace_data_source.h"
+#include "src/traced/probes/ftrace/ftrace_metadata.h"
 #include "src/traced/probes/ftrace/ftrace_print_filter.h"
 #include "src/traced/probes/ftrace/proto_translation_table.h"
 
@@ -1134,6 +1135,63 @@ void CpuReader::ParseSchedWakingCompact(const uint8_t* start,
   uint32_t common_flags =
       ReadValue<uint8_t>(start + format->common_flags_offset);
   compact_buf->sched_waking().common_flags().Append(common_flags);
+}
+
+// TODO: effectively ReadCycle + ReadAndProcessBatch, without batching, error
+// reporting, handling an active tracefs, etc.
+size_t CpuReader::ReadFrozen(ParsingBuffers* parsing_bufs,
+                             size_t max_pages,
+                             const FtraceDataSourceConfig* parsing_config,
+                             TraceWriter* trace_writer) {
+  PERFETTO_CHECK(max_pages > 0 &&
+                 parsing_bufs->ftrace_data_buf_pages() >= max_pages);
+
+  uint8_t* parsing_buf = parsing_bufs->ftrace_data_buf();
+  const uint32_t sys_page_size = base::GetSysPageSize();
+
+  // Read the pages into |parsing_buf|.
+  size_t pages_read = 0;
+  for (; pages_read < max_pages;) {
+    uint8_t* curr_page = parsing_buf + (pages_read * sys_page_size);
+    ssize_t res = PERFETTO_EINTR(read(*trace_fd_, curr_page, sys_page_size));
+    if (res < 0) {
+      // Expected:
+      // * EAGAIN: no data (since we're in non-blocking mode).
+      // TODO: UNIMPLEMENTED: unsure about other errors for a stopped instance,
+      // stopping logic needs a closer look.
+      PERFETTO_PLOG("TODO");
+      break;
+    }
+    if (res != static_cast<ssize_t>(sys_page_size)) {
+      // TODO: UNIMPLEMENTED: stopping logic needs a closer look, the overall
+      // FrozenFtraceDataSource must not get stuck perpetually trying to read
+      // the buffers even if there are unexpected errors.
+      break;
+    }
+    pages_read += 1;
+  }
+
+  if (pages_read == 0)
+    return pages_read;
+
+  // Inputs that we will throw away since we only need a subset of what
+  // FtraceDataSource does.
+  // TODO: consider making use of |parse_errors|.
+  uint64_t bundle_end_timestamp = 0;
+  FtraceMetadata metadata;
+  base::FlatSet<protos::pbzero::FtraceParseStatus> parse_errors;
+
+  // Convert events and serialise the protos.
+  bool parse_ok = ProcessPagesForDataSource(
+      trace_writer, &metadata, cpu_, parsing_config, &parse_errors,
+      &bundle_end_timestamp, parsing_buf, pages_read,
+      parsing_bufs->compact_sched_buf(), table_, symbolizer_,
+      ftrace_clock_snapshot_, ftrace_clock_);
+  if (!parse_ok) {
+    PERFETTO_ELOG("TODO");
+  }
+
+  return pages_read;
 }
 
 }  // namespace perfetto
