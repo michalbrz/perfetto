@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef SRC_TRACED_PROBES_FROZEN_FTRACE_FTRACE_DATA_SOURCE_H_
-#define SRC_TRACED_PROBES_FROZEN_FTRACE_FTRACE_DATA_SOURCE_H_
+#ifndef SRC_TRACED_PROBES_FTRACE_FROZEN_FTRACE_DATA_SOURCE_H_
+#define SRC_TRACED_PROBES_FTRACE_FROZEN_FTRACE_DATA_SOURCE_H_
 
 #include <memory>
 #include <vector>
@@ -86,4 +86,4 @@ class FrozenFtraceDataSource : public ProbesDataSource {
 
 }  // namespace perfetto
 
-#endif  // SRC_TRACED_PROBES_FTRACE_FTRACE_DATA_SOURCE_H_
+#endif  // SRC_TRACED_PROBES_FTRACE_FROZEN_FTRACE_DATA_SOURCE_H_
