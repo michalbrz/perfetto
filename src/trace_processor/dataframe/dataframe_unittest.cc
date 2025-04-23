@@ -117,7 +117,7 @@ class DataframeBytecodeTest : public ::testing::Test {
     std::unique_ptr<Dataframe> df(new Dataframe(
         std::move(col_names), std::move(col_fixed_vec), 0, &string_pool_));
     ASSERT_OK_AND_ASSIGN(Dataframe::QueryPlan plan,
-                         df->PlanQuery(filters, distinct_specs, sort_specs,
+                         df->PlanQuery({}, filters, distinct_specs, sort_specs,
                                        limit_spec, sanitized_cols_used));
     EXPECT_THAT(FormatBytecode(plan),
                 EqualsIgnoringWhitespace(expected_bytecode));

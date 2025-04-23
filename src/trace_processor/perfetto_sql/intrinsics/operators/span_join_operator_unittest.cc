@@ -23,7 +23,9 @@
 #include <string>
 #include <vector>
 
+#include "perfetto/ext/base/flat_hash_map.h"
 #include "src/trace_processor/containers/string_pool.h"
+#include "src/trace_processor/dataframe/dataframe.h"
 #include "src/trace_processor/perfetto_sql/engine/perfetto_sql_engine.h"
 #include "src/trace_processor/sqlite/scoped_db.h"
 #include "src/trace_processor/sqlite/sqlite_engine.h"
@@ -67,7 +69,8 @@ class SpanJoinOperatorTableTest : public ::testing::Test {
 
  protected:
   StringPool pool_;
-  PerfettoSqlEngine engine_{&pool_, nullptr, true};
+  base::FlatHashMap<std::string, dataframe::Dataframe*> static_dataframes_;
+  PerfettoSqlEngine engine_{&pool_, static_dataframes_, nullptr, true};
   ScopedStmt stmt_;
 };
 

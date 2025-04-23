@@ -44,6 +44,8 @@
 #include "src/trace_processor/dataframe/impl/flex_vector.h"
 #include "src/trace_processor/dataframe/impl/slab.h"
 #include "src/trace_processor/dataframe/impl/types.h"
+#include "src/trace_processor/dataframe/index.h"
+#include "src/trace_processor/dataframe/span.h"
 #include "src/trace_processor/dataframe/specs.h"
 #include "src/trace_processor/dataframe/value_fetcher.h"
 #include "src/trace_processor/util/regex.h"
@@ -388,7 +390,9 @@ class BytecodeInterpreterTest : public testing::Test {
 
   void SetupInterpreterWithBytecode(BytecodeVector bytecode) {
     interpreter_ = std::make_unique<Interpreter<Fetcher>>(
-        std::move(bytecode), columns_vec_.data(), &spool_);
+        std::move(bytecode), columns_vec_.data(), &spool_,
+        Span<const dataframe::Index>(indexes_.data(),
+                                     indexes_.data() + indexes_.size()));
   }
 
   template <typename T>
@@ -401,6 +405,7 @@ class BytecodeInterpreterTest : public testing::Test {
   Fetcher fetcher_;
   StringPool spool_;
   std::vector<Column> columns_vec_;
+  std::vector<dataframe::Index> indexes_;
   std::unique_ptr<Interpreter<Fetcher>> interpreter_;
 };
 
@@ -1598,7 +1603,7 @@ TEST_F(BytecodeInterpreterTest, ExecuteNullPartitionNullsAtStart) {
   SetRegistersAndExecute(
       "NullIndicesStablePartition: [col=0, nulls_location=NullsLocation(0), "
       "partition_register=Register(0), dest_non_null_register=Register(1)]",
-      GetSpan(initial_indices), impl::Span<uint32_t>{nullptr, nullptr});
+      GetSpan(initial_indices), Span<uint32_t>{nullptr, nullptr});
 
   EXPECT_THAT(GetRegister<Span<uint32_t>>(0), ElementsAre(0, 2, 5, 1, 3, 4, 6));
   EXPECT_THAT(GetRegister<Span<uint32_t>>(1), ElementsAre(1, 3, 4, 6));
@@ -1620,7 +1625,7 @@ TEST_F(BytecodeInterpreterTest, ExecuteNullPartitionNullsAtEnd) {
   SetRegistersAndExecute(
       "NullIndicesStablePartition: [col=0, nulls_location=NullsLocation(1), "
       "partition_register=Register(0), dest_non_null_register=Register(1)]",
-      GetSpan(initial_indices), impl::Span<uint32_t>{nullptr, nullptr});
+      GetSpan(initial_indices), Span<uint32_t>{nullptr, nullptr});
 
   EXPECT_THAT(GetRegister<Span<uint32_t>>(0), ElementsAre(1, 3, 4, 6, 0, 2, 5));
   EXPECT_THAT(GetRegister<Span<uint32_t>>(1), ElementsAre(1, 3, 4, 6));
@@ -1638,7 +1643,7 @@ TEST_F(BytecodeInterpreterTest, ExecuteNullPartitionAllNulls) {
   SetRegistersAndExecute(
       "NullIndicesStablePartition: [col=0, nulls_location=NullsLocation(0), "
       "partition_register=Register(0), dest_non_null_register=Register(1)]",
-      GetSpan(initial_indices), impl::Span<uint32_t>{nullptr, nullptr});
+      GetSpan(initial_indices), Span<uint32_t>{nullptr, nullptr});
 
   EXPECT_THAT(GetRegister<Span<uint32_t>>(0), ElementsAre(0, 1, 2));
   EXPECT_THAT(GetRegister<Span<uint32_t>>(1), ElementsAre());
@@ -1656,7 +1661,7 @@ TEST_F(BytecodeInterpreterTest, ExecuteNullPartitionEmptyInput) {
   SetRegistersAndExecute(
       "NullIndicesStablePartition: [col=0, nulls_location=NullsLocation(0), "
       "partition_register=Register(0), dest_non_null_register=Register(1)]",
-      GetSpan(initial_indices), impl::Span<uint32_t>{nullptr, nullptr});
+      GetSpan(initial_indices), Span<uint32_t>{nullptr, nullptr});
 
   EXPECT_THAT(GetRegister<Span<uint32_t>>(0), ElementsAre());
   EXPECT_THAT(GetRegister<Span<uint32_t>>(1), ElementsAre());

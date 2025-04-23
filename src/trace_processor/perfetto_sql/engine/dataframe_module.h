@@ -21,14 +21,13 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <utility>
+#include <vector>
 
 #include "src/trace_processor/containers/null_term_string_view.h"
-#include "src/trace_processor/containers/string_pool.h"
 #include "src/trace_processor/dataframe/cursor.h"
 #include "src/trace_processor/dataframe/dataframe.h"
+#include "src/trace_processor/dataframe/index.h"
 #include "src/trace_processor/dataframe/value_fetcher.h"
-#include "src/trace_processor/perfetto_sql/engine/dataframe_shared_storage.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_module.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_result.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_type.h"
@@ -45,14 +44,15 @@ struct DataframeModule : sqlite::Module<DataframeModule> {
   static constexpr bool kDoesOverloadFunctions = false;
 
   struct State {
-    explicit State(std::shared_ptr<const dataframe::Dataframe> _dataframe)
-        : dataframe(std::move(_dataframe)) {}
-    std::shared_ptr<const dataframe::Dataframe> dataframe;
+    explicit State(const dataframe::Dataframe* _dataframe,
+                   const std::vector<const dataframe::Index*>* _indexes)
+        : dataframe(_dataframe) {}
+    const dataframe::Dataframe* dataframe;
+    bool is_destroy_allowed = false;
+    bool is_index_creation_allowed = false;
   };
   struct Context : sqlite::ModuleStateManager<DataframeModule> {
-    explicit Context(DataframeSharedStorage* _dataframe_shared_storage)
-        : dataframe_shared_storage(_dataframe_shared_storage) {}
-    DataframeSharedStorage* dataframe_shared_storage;
+    std::unique_ptr<State> temporary_create_state;
   };
   struct SqliteValueFetcher : dataframe::ValueFetcher {
     using Type = sqlite::Type;
@@ -89,10 +89,12 @@ struct DataframeModule : sqlite::Module<DataframeModule> {
   struct Vtab : sqlite::Module<DataframeModule>::Vtab {
     sqlite::ModuleStateManager<DataframeModule>::PerVtabState* state;
     const dataframe::Dataframe* dataframe;
+    const std::vector<const dataframe::Index*>* indexes;
   };
   using DfCursor = dataframe::Cursor<SqliteValueFetcher>;
   struct Cursor : sqlite::Module<DataframeModule>::Cursor {
     const dataframe::Dataframe* dataframe;
+    const std::vector<const dataframe::Index*>* indexes;
     std::optional<DfCursor> df_cursor;
     const char* last_idx_str = nullptr;
   };

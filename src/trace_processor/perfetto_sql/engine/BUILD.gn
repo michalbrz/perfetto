@@ -65,6 +65,7 @@ perfetto_unittest_source_set("unittests") {
     "../../../base",
     "../..//tables:tables_python",
     "../../containers",
+    "../../dataframe",
     "../../perfetto_sql/intrinsics/table_functions:interface",
     "../../sqlite",
     "../../util:stdlib",

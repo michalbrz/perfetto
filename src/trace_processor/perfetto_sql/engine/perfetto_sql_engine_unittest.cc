@@ -20,7 +20,9 @@
 #include <utility>
 #include <vector>
 
+#include "perfetto/ext/base/flat_hash_map.h"
 #include "src/trace_processor/containers/string_pool.h"
+#include "src/trace_processor/dataframe/dataframe.h"
 #include "src/trace_processor/perfetto_sql/engine/dataframe_shared_storage.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_result.h"
 #include "src/trace_processor/sqlite/sql_source.h"
@@ -33,8 +35,10 @@ namespace {
 class PerfettoSqlEngineTest : public ::testing::Test {
  protected:
   StringPool pool_;
+  base::FlatHashMap<std::string, dataframe::Dataframe*> static_dataframes_;
   DataframeSharedStorage dataframe_shared_storage_;
-  PerfettoSqlEngine engine_{&pool_, &dataframe_shared_storage_, true};
+  PerfettoSqlEngine engine_{&pool_, static_dataframes_,
+                            &dataframe_shared_storage_, true};
 };
 
 sql_modules::RegisteredPackage CreateTestPackage(

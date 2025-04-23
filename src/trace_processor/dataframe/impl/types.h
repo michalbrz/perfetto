@@ -330,24 +330,6 @@ struct Range {
   bool empty() const { return b == e; }
 };
 
-// Represents a contiguous sequence of elements of an arbitrary type T.
-// Basically a very simple backport of std::span to C++17.
-template <typename T>
-struct Span {
-  using value_type = T;
-  using const_iterator = T*;
-
-  T* b;
-  T* e;
-
-  Span(T* _b, T* _e) : b(_b), e(_e) {}
-
-  T* begin() const { return b; }
-  T* end() const { return e; }
-  size_t size() const { return static_cast<size_t>(e - b); }
-  bool empty() const { return b == e; }
-};
-
 }  // namespace perfetto::trace_processor::dataframe::impl
 
 #endif  // SRC_TRACE_PROCESSOR_DATAFRAME_IMPL_TYPES_H_

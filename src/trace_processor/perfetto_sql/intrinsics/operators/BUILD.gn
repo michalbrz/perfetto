@@ -96,7 +96,9 @@ perfetto_unittest_source_set("unittests") {
     "../../../../../gn:default_deps",
     "../../../../../gn:gtest_and_gmock",
     "../../../../../gn:sqlite",
+    "../../../../base",
     "../../../containers",
+    "../../../dataframe",
     "../../../sqlite",
     "../../engine",
   ]

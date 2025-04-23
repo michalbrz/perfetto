@@ -32,6 +32,7 @@
 #include <unordered_set>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "perfetto/base/compiler.h"
 #include "perfetto/base/logging.h"
@@ -45,6 +46,8 @@
 #include "src/trace_processor/dataframe/impl/bytecode_registers.h"
 #include "src/trace_processor/dataframe/impl/slab.h"
 #include "src/trace_processor/dataframe/impl/types.h"
+#include "src/trace_processor/dataframe/index.h"
+#include "src/trace_processor/dataframe/span.h"
 #include "src/trace_processor/dataframe/specs.h"
 #include "src/trace_processor/dataframe/value_fetcher.h"
 #include "src/trace_processor/util/glob.h"
@@ -152,10 +155,12 @@ class Interpreter {
 
   Interpreter(BytecodeVector bytecode,
               const Column* columns,
-              const StringPool* string_pool)
+              const StringPool* string_pool,
+              const std::vector<const dataframe::Index*>& indexes)
       : bytecode_(std::move(bytecode)),
         columns_(columns),
-        string_pool_(string_pool) {}
+        string_pool_(string_pool),
+        indexes_(indexes) {}
 
   // Not movable because it's a very large object and the move cost would be
   // high. Prefer constructing in place.
@@ -1319,6 +1324,8 @@ class Interpreter {
   const Column* columns_;
   // Pointer to the string pool (for string operations)
   const StringPool* string_pool_;
+  // The indexes which may be referenced by this interpreter.
+  const std::vector<const dataframe::Index*>& indexes_;
 };
 
 }  // namespace perfetto::trace_processor::dataframe::impl::bytecode

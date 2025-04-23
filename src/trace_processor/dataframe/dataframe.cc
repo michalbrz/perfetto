@@ -22,12 +22,14 @@
 
 #include "perfetto/ext/base/status_or.h"
 #include "src/trace_processor/dataframe/impl/query_plan.h"
+#include "src/trace_processor/dataframe/index.h"
 #include "src/trace_processor/dataframe/specs.h"
 #include "src/trace_processor/util/status_macros.h"
 
 namespace perfetto::trace_processor::dataframe {
 
 base::StatusOr<Dataframe::QueryPlan> Dataframe::PlanQuery(
+    const std::vector<const Index*>&,
     std::vector<FilterSpec>& filter_specs,
     const std::vector<DistinctSpec>& distinct_specs,
     const std::vector<SortSpec>& sort_specs,

@@ -28,9 +28,11 @@
 #include <vector>
 
 #include "perfetto/base/status.h"
+#include "perfetto/ext/base/flat_hash_map.h"
 #include "perfetto/trace_processor/basic_types.h"
 #include "perfetto/trace_processor/trace_blob_view.h"
 #include "perfetto/trace_processor/trace_processor.h"
+#include "src/trace_processor/dataframe/dataframe.h"
 #include "src/trace_processor/iterator_impl.h"
 #include "src/trace_processor/metrics/metrics.h"
 #include "src/trace_processor/perfetto_sql/engine/dataframe_shared_storage.h"
@@ -155,6 +157,7 @@ class TraceProcessorImpl : public TraceProcessor,
   const Config config_;
 
   DataframeSharedStorage dataframe_shared_storage_;
+  base::FlatHashMap<std::string, dataframe::Dataframe*> static_dataframes_;
   std::unique_ptr<PerfettoSqlEngine> engine_;
 
   DescriptorPool metrics_descriptor_pool_;

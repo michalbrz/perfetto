@@ -31,6 +31,8 @@
 #include "src/trace_processor/dataframe/impl/query_plan.h"
 #include "src/trace_processor/dataframe/impl/static_vector.h"
 #include "src/trace_processor/dataframe/impl/types.h"
+#include "src/trace_processor/dataframe/index.h"
+#include "src/trace_processor/dataframe/span.h"
 #include "src/trace_processor/dataframe/specs.h"
 
 namespace perfetto::trace_processor::dataframe {
@@ -104,16 +106,24 @@ class Dataframe {
   // and column selection.
   //
   // Parameters:
+  //   indexes:          Any additional indexes on this dataframe which can be
+  //                     used to speed up this query. The dataframe may use one
+  //                     or more indexes from here if it will make the query
+  //                     faster. An identical set of indices should later be
+  //                     passed to `PrepareCursor` when actually executing the
+  //                     query plan.
   //   filter_specs:     Filter predicates to apply to the data.
-  //   distinct_specs:   Distinct specifications to remove duplicate rows.
+  //   distinct_specs:   Distinct specifications to remove d`uplicate rows.
   //   sort_specs:       Sort specifications defining the desired row order.
   //   limit_spec:       Optional struct specifying LIMIT and OFFSET values.
   //   cols_used_bitmap: Bitmap where each bit corresponds to a column that may
   //                     be requested. Only columns with set bits can be
   //                     fetched.
+  //
   // Returns:
   //   A StatusOr containing the QueryPlan or an error status.
   base::StatusOr<QueryPlan> PlanQuery(
+      const std::vector<const Index*>& indexes,
       std::vector<FilterSpec>& filter_specs,
       const std::vector<DistinctSpec>& distinct_specs,
       const std::vector<SortSpec>& sort_specs,
@@ -126,13 +136,16 @@ class Dataframe {
   // calling `PlanQuery`.
   //
   // Parameters:
-  //   plan: The query plan to execute.
-  //   c:    A reference to a std::optional that will be set to the prepared
-  //         cursor.
+  //   plan:    The query plan to execute.
+  //   indexes: A list of indexes identical to those passed to `PlanQuery`. See
+  //            that function for more information.
+  //   c:       A reference to a std::optional that will be set to the prepared
+  //            cursor.
   template <typename FilterValueFetcherImpl>
   void PrepareCursor(QueryPlan plan,
+                     const std::vector<const Index*>& indexes,
                      std::optional<Cursor<FilterValueFetcherImpl>>& c) const {
-    c.emplace(std::move(plan.plan_), columns_.data(), string_pool_);
+    c.emplace(std::move(plan.plan_), columns_.data(), string_pool_, indexes);
   }
 
   // Creates a vector of ColumnSpec objects that describe the columns in the

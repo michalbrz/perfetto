@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <limits>
 #include <utility>
+#include <vector>
 
 #include "perfetto/base/logging.h"
 #include "perfetto/public/compiler.h"
@@ -29,6 +30,8 @@
 #include "src/trace_processor/dataframe/impl/bytecode_interpreter.h"
 #include "src/trace_processor/dataframe/impl/query_plan.h"
 #include "src/trace_processor/dataframe/impl/types.h"
+#include "src/trace_processor/dataframe/index.h"
+#include "src/trace_processor/dataframe/span.h"
 #include "src/trace_processor/dataframe/specs.h"
 #include "src/trace_processor/dataframe/value_fetcher.h"
 
@@ -55,8 +58,9 @@ class Cursor {
   // Constructs a cursor from a query plan and dataframe columns.
   Cursor(impl::QueryPlan plan,
          const impl::Column* columns,
-         const StringPool* pool)
-      : interpreter_(std::move(plan.bytecode), columns, pool),
+         const StringPool* pool,
+         const std::vector<const Index*>& indexes)
+      : interpreter_(std::move(plan.bytecode), columns, pool, indexes),
         params_(plan.params),
         columns_(columns),
         pool_(pool) {}
@@ -69,7 +73,7 @@ class Cursor {
   //        filter values for each filter spec.
   PERFETTO_ALWAYS_INLINE void Execute(
       FilterValueFetcherImpl& filter_value_fetcher) {
-    using S = impl::Span<uint32_t>;
+    using S = Span<uint32_t>;
     interpreter_.Execute(filter_value_fetcher);
 
     const auto& span =

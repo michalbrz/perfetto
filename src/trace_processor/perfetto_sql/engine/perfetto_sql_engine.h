@@ -31,8 +31,11 @@
 #include "perfetto/ext/base/status_or.h"
 #include "perfetto/trace_processor/basic_types.h"
 #include "src/trace_processor/containers/string_pool.h"
+#include "src/trace_processor/dataframe/dataframe.h"
+#include "src/trace_processor/dataframe/index.h"
 #include "src/trace_processor/db/runtime_table.h"
 #include "src/trace_processor/db/table.h"
+#include "src/trace_processor/perfetto_sql/engine/dataframe_module.h"
 #include "src/trace_processor/perfetto_sql/engine/dataframe_shared_storage.h"
 #include "src/trace_processor/perfetto_sql/engine/runtime_table_function.h"
 #include "src/trace_processor/perfetto_sql/intrinsics/functions/sql_function.h"
@@ -69,6 +72,8 @@ class PerfettoSqlEngine {
   };
 
   PerfettoSqlEngine(StringPool* pool,
+                    const base::FlatHashMap<std::string, dataframe::Dataframe*>&
+                        static_dataframes,
                     DataframeSharedStorage* storage,
                     bool enable_extra_checks);
 
@@ -307,6 +312,9 @@ class PerfettoSqlEngine {
 
   base::Status ExecuteCreateIndex(const PerfettoSqlParser::CreateIndex&);
 
+  base::Status ExecuteCreateIndexUsingTable(
+      const PerfettoSqlParser::CreateIndex&);
+
   base::Status ExecuteDropIndex(const PerfettoSqlParser::DropIndex&);
 
   base::Status ExecuteCreateTableUsingDataframe(
@@ -422,6 +430,7 @@ class PerfettoSqlEngine {
   DbSqliteModule::Context* runtime_table_context_ = nullptr;
   DbSqliteModule::Context* static_table_context_ = nullptr;
   DbSqliteModule::Context* static_table_fn_context_ = nullptr;
+  DataframeModule::Context* dataframe_context_ = nullptr;
   base::FlatHashMap<std::string, sql_modules::RegisteredPackage> packages_;
   base::FlatHashMap<std::string, PerfettoSqlPreprocessor::Macro> macros_;
   std::unique_ptr<SqliteEngine> engine_;

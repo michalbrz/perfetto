@@ -16,6 +16,7 @@
 
 #include "src/trace_processor/perfetto_sql/engine/perfetto_sql_engine.h"
 
+#include <sqlite3.h>
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -304,9 +305,12 @@ std::string GetTokenNamesAllowedInMacro() {
 
 }  // namespace
 
-PerfettoSqlEngine::PerfettoSqlEngine(StringPool* pool,
-                                     DataframeSharedStorage* storage,
-                                     bool enable_extra_checks)
+PerfettoSqlEngine::PerfettoSqlEngine(
+    StringPool* pool,
+    const base::FlatHashMap<std::string, dataframe::Dataframe*>&
+        static_dataframes,
+    DataframeSharedStorage* storage,
+    bool enable_extra_checks)
     : pool_(pool),
       dataframe_shared_storage_(storage),
       enable_extra_checks_(enable_extra_checks),
@@ -355,10 +359,35 @@ PerfettoSqlEngine::PerfettoSqlEngine(StringPool* pool,
                                                std::move(ctx));
   }
   {
-    auto ctx =
-        std::make_unique<DataframeModule::Context>(dataframe_shared_storage_);
+    auto ctx = std::make_unique<DataframeModule::Context>();
+    dataframe_context_ = ctx.get();
     RegisterVirtualTableModule<DataframeModule>("__intrinsic_dataframe",
                                                 std::move(ctx));
+  }
+
+  for (auto it = static_dataframes.GetIterator(); it; ++it) {
+    // Make sure we didn't accidentally leak a state from a previous table
+    // creation.
+    PERFETTO_CHECK(!dataframe_context_->temporary_create_state);
+    dataframe_context_->temporary_create_state =
+        std::make_unique<DataframeModule::State>(
+            it.value(), &dataframe_context_->always_empty_indexes);
+
+    const auto& table_name = it.key();
+    base::StackString<1024> sql(
+        R"(
+          CREATE VIRTUAL TABLE %s USING __intrinsic_dataframe(%lu);
+          INSERT INTO perfetto_tables(name) VALUES('%s');
+        )",
+        table_name.c_str(),
+        DataframeSharedStorage::MakeTagForStaticTable(table_name).hash,
+        table_name.c_str());
+    auto status =
+        Execute(SqlSource::FromTraceProcessorImplementation(sql.ToStdString()));
+    if (!status.ok()) {
+      PERFETTO_FATAL("%s", status.status().c_message());
+    }
+    PERFETTO_CHECK(!dataframe_context_->temporary_create_state);
   }
 }
 
@@ -401,7 +430,6 @@ void PerfettoSqlEngine::RegisterStaticTable(Table* table,
   if (!status.ok()) {
     PERFETTO_FATAL("%s", status.status().c_message());
   }
-
   PERFETTO_CHECK(!static_table_context_->temporary_create_state);
 }
 
@@ -712,15 +740,7 @@ base::Status PerfettoSqlEngine::ExecuteCreateTable(
     return ExecuteCreateTableUsingRuntimeTable(create_table, std::move(stmt),
                                                column_names, effective_schema);
   }
-  return ExecuteCreateTableUsingDataframe(
-      create_table, std::move(stmt), std::move(column_names), effective_schema);
-}
 
-base::Status PerfettoSqlEngine::ExecuteCreateTableUsingDataframe(
-    const PerfettoSqlParser::CreateTable& create_table,
-    SqliteEngine::PreparedStatement prepared_stmt,
-    std::vector<std::string> column_names,
-    const std::vector<sql_argument::ArgumentDefinition>&) {
   DataframeSharedStorage::Tag tag;
   if (module_include_stack_.empty()) {
     tag = DataframeSharedStorage::MakeUniqueTag();
@@ -728,14 +748,14 @@ base::Status PerfettoSqlEngine::ExecuteCreateTableUsingDataframe(
     tag = DataframeSharedStorage::MakeTagForSqlModuleTable(
         module_include_stack_.back(), create_table.name);
   }
+
   auto df = dataframe_shared_storage_->Find(tag);
   if (!df) {
     int res;
-    auto* stmt = prepared_stmt.sqlite_stmt();
-    SqliteStmtValueFetcher fetcher{{}, stmt};
+    SqliteStmtValueFetcher fetcher{{}, stmt.sqlite_stmt()};
     dataframe::RuntimeDataframeBuilder builder(std::move(column_names), pool_);
-    for (res = sqlite3_step(stmt); res == SQLITE_ROW;
-         res = sqlite3_step(stmt)) {
+    for (res = sqlite3_step(stmt.sqlite_stmt()); res == SQLITE_ROW;
+         res = sqlite3_step(stmt.sqlite_stmt())) {
       builder.AddRow(&fetcher);
     }
     static const char* err_tag = "CREATE PERFETTO TABLE";
@@ -748,6 +768,19 @@ base::Status PerfettoSqlEngine::ExecuteCreateTableUsingDataframe(
     df = dataframe_shared_storage_->Insert(
         tag, std::make_unique<dataframe::Dataframe>(std::move(table)));
   }
+
+  // Make sure we didn't accidentally leak a state from a previous dataframe
+  // creation.
+  PERFETTO_CHECK(!dataframe_context_->temporary_create_state);
+
+  // Move the state into the context so that it will be picked up in xCreate
+  // of DataframeModule.
+  dataframe_context_->temporary_create_state =
+      std::make_unique<DataframeModule::State>(
+          df.get(), &dataframe_context_->always_empty_indexes);
+  dataframe_context_->temporary_create_state->is_destroy_allowed = true;
+  dataframe_context_->temporary_create_state->is_index_creation_allowed = true;
+
   base::StackString<1024> drop("DROP TABLE IF EXISTS %s;",
                                create_table.name.c_str());
   base::StackString<1024> sql_str(
@@ -760,7 +793,9 @@ base::Status PerfettoSqlEngine::ExecuteCreateTableUsingDataframe(
 
   auto exec_res = Execute(
       SqlSource::FromTraceProcessorImplementation(sql_str.ToStdString()));
-  if (!exec_res.ok()) {
+  if (exec_res.ok()) {
+    PERFETTO_CHECK(!dataframe_context_->temporary_create_state);
+  } else {
     auto rollback_res = Execute(SqlSource::FromTraceProcessorImplementation(
         "ROLLBACK TO create_table_using_dataframe; "
         "RELEASE create_table_using_dataframe;"));
@@ -922,10 +957,37 @@ base::Status PerfettoSqlEngine::ExecuteCreateIndex(
                       record->AddArg("cols", base::Join(index.col_names, ", "));
                     });
 
+  DataframeModule::State* d =
+      dataframe_context_->FindStateByNameSlow(index.table_name);
+  if (!d) {
+    return ExecuteCreateIndexUsingTable(index);
+  }
+
+  DataframeIndex* df_index = dataframe_indexes_.Find(index.name);
+  if (df_index) {
+    if (df_index->lifecycle == DataframeIndex::kDestroyedButNotCommitted) {
+    }
+  }
+
+  std::vector<uint32_t> col_idxs;
+  for (const std::string& col_name : index.col_names) {
+    const std::optional<uint32_t> opt_col = t->ColumnIdxFromName(col_name);
+    if (!opt_col) {
+      return base::ErrStatus(
+          "CREATE PERFETTO INDEX: Column '%s' not found in table '%s'",
+          col_name.c_str(), index.table_name.c_str());
+    }
+    col_idxs.push_back(*opt_col);
+  }
+  RETURN_IF_ERROR(
+      t->CreateIndex(index.name, std::move(col_idxs), index.replace));
+  return base::OkStatus();
+}
+
+base::Status PerfettoSqlEngine::ExecuteCreateIndexUsingTable(
+    const PerfettoSqlParser::CreateIndex& index) {
   Table* t = GetTableOrNullSlow(index.table_name);
   if (!t) {
-    return base::ErrStatus("CREATE PERFETTO INDEX: Table '%s' not found",
-                           index.table_name.c_str());
   }
   std::vector<uint32_t> col_idxs;
   for (const std::string& col_name : index.col_names) {

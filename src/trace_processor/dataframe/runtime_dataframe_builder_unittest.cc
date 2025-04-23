@@ -155,12 +155,12 @@ class DataframeBuilderTest : public ::testing::Test {
     std::vector<FilterSpec> filter_specs;
     auto num_cols_selected =
         static_cast<uint32_t>(PERFETTO_POPCOUNT(cols_bitmap));
-    ASSERT_OK_AND_ASSIGN(auto plan,
-                         df.PlanQuery(filter_specs, {}, {}, {}, cols_bitmap));
+    ASSERT_OK_AND_ASSIGN(
+        auto plan, df.PlanQuery({}, filter_specs, {}, {}, {}, cols_bitmap));
 
     TestRowFetcher execute_fetcher;
     std::optional<Cursor<TestRowFetcher>> cursor;
-    df.PrepareCursor(std::move(plan), cursor);
+    df.PrepareCursor(std::move(plan), {}, cursor);
     cursor->Execute(execute_fetcher);
 
     size_t row_index = 0;

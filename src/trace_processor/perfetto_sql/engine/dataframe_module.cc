@@ -27,12 +27,10 @@
 #include <utility>
 #include <vector>
 
-#include "perfetto/base/compiler.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_utils.h"
 #include "src/trace_processor/dataframe/dataframe.h"
 #include "src/trace_processor/dataframe/specs.h"
-#include "src/trace_processor/perfetto_sql/engine/dataframe_shared_storage.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_type.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_value.h"
 #include "src/trace_processor/sqlite/module_state_manager.h"
@@ -109,25 +107,30 @@ int DataframeModule::Create(sqlite3* db,
   PERFETTO_CHECK(tag_hash);
 
   auto* ctx = GetContext(raw_ctx);
-  auto table = ctx->dataframe_shared_storage->Find(
-      DataframeSharedStorage::Tag{*tag_hash});
-  PERFETTO_CHECK(table);
-
-  std::string create_stmt = CreateTableStmt(table->CreateColumnSpecs());
+  const auto* df = ctx->temporary_create_state->dataframe;
+  std::string create_stmt = CreateTableStmt(df->CreateColumnSpecs());
   if (int r = sqlite3_declare_vtab(db, create_stmt.c_str()); r != SQLITE_OK) {
     return r;
   }
   std::unique_ptr<Vtab> res = std::make_unique<Vtab>();
-  res->dataframe = table.get();
-  auto* state =
-      ctx->OnCreate(argc, argv, std::make_unique<State>(std::move(table)));
-  res->state = state;
+  res->dataframe = df;
+
+  // Very important: do not move the std::move out of
+  // `ctx->temporary_create_state` above the error handling above. Otherwise,
+  // errors in the destructor of the state will lead to PERFETTO_FATALs.
+  res->state =
+      ctx->OnCreate(argc, argv, std::move(ctx->temporary_create_state));
   *vtab = res.release();
   return SQLITE_OK;
 }
 
 int DataframeModule::Destroy(sqlite3_vtab* vtab) {
-  std::unique_ptr<Vtab> v(GetVtab(vtab));
+  auto* t = GetVtab(vtab);
+  auto* s = sqlite::ModuleStateManager<DataframeModule>::GetState(t->state);
+  if (!s->is_destroy_allowed) {
+    return sqlite::utils::SetError(vtab, "not allowed to destroy table");
+  }
+  std::unique_ptr<Vtab> v(t);
   sqlite::ModuleStateManager<DataframeModule>::OnDestroy(v->state);
   return SQLITE_OK;
 }
@@ -152,7 +155,7 @@ int DataframeModule::Connect(sqlite3* db,
     return r;
   }
   std::unique_ptr<Vtab> res = std::make_unique<Vtab>();
-  res->dataframe = state->dataframe.get();
+  res->dataframe = state->dataframe;
   res->state = vtab_state;
   *vtab = res.release();
   return SQLITE_OK;
@@ -248,8 +251,8 @@ int DataframeModule::BestIndex(sqlite3_vtab* tab, sqlite3_index_info* info) {
 
   SQLITE_ASSIGN_OR_RETURN(
       tab, auto plan,
-      v->dataframe->PlanQuery(filter_specs, distinct_specs, sort_specs,
-                              limit_spec, info->colUsed));
+      v->dataframe->PlanQuery(*v->indexes, filter_specs, distinct_specs,
+                              sort_specs, limit_spec, info->colUsed));
   for (const auto& c : filter_specs) {
     if (auto value_index = c.value_index; value_index) {
       info->aConstraintUsage[c.source_index].argvIndex =
@@ -287,7 +290,7 @@ int DataframeModule::Filter(sqlite3_vtab_cursor* cur,
   auto* c = GetCursor(cur);
   if (idxStr != c->last_idx_str) {
     auto plan = dataframe::Dataframe::QueryPlan::Deserialize(idxStr);
-    v->dataframe->PrepareCursor(plan, c->df_cursor);
+    v->dataframe->PrepareCursor(plan, *v->indexes, c->df_cursor);
     c->last_idx_str = idxStr;
   }
   SqliteValueFetcher fetcher{{}, argv};

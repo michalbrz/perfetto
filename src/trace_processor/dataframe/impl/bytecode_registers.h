@@ -21,8 +21,10 @@
 #include <limits>
 #include <variant>
 
+#include "perfetto/base/build_config.h"
 #include "src/trace_processor/dataframe/impl/slab.h"
 #include "src/trace_processor/dataframe/impl/types.h"
+#include "src/trace_processor/dataframe/span.h"
 
 namespace perfetto::trace_processor::dataframe::impl::bytecode::reg {
 
