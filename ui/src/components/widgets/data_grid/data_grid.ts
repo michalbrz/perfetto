@@ -33,6 +33,7 @@ import {Icon} from '../../../widgets/icon';
 import {Icons} from '../../../base/semantic_icons';
 import {InMemoryDataSource} from './in_memory_data_source';
 import {classNames} from '../../../base/classnames';
+import {LinearProgress} from '../../../widgets/linear_progress';
 
 const DEFAULT_ROWS_PER_PAGE = 50;
 
@@ -285,6 +286,10 @@ export class DataGrid implements m.ClassComponent<DataGridAttrs> {
         showResetButton,
         toolbarItems,
       ),
+      m(LinearProgress, {
+        className: 'pf-data-grid__loading',
+        state: dataSource.isLoading ? 'indeterminate' : 'none',
+      }),
       m('.pf-data-grid__table', [
         m(
           'table',
